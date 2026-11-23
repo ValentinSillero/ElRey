@@ -39,58 +39,46 @@ export function getOrderChannel(locality: Locality | undefined): OrderChannel {
   return { kind: "none" };
 }
 
+/**
+ * Mensaje del pedido, escrito como lo mandaría un cliente. No nombra la localidad:
+ * el número de destino ya corresponde a la localidad elegida (ver getOrderChannel).
+ * Formato de WhatsApp: *negrita* para cada helado y el total; sin campos vacíos.
+ */
 export function buildOrderMessage(items: CartItem[], data: CheckoutData): string {
   const locality = getLocality(data.localityId);
-  const store = getStore(locality, data.storeId);
-  const lines: string[] = [];
+  // si la localidad tiene un único local, ese es el de retiro aunque no se haya elegido
+  const store = getStore(locality, data.storeId) ?? (locality?.stores.length === 1 ? locality.stores[0] : undefined);
+  const lines: string[] = ["Hola, buenas! Quería realizar un pedido."];
 
-  lines.push("Hola, Helados El Rey. Quiero hacer un pedido.");
-  lines.push("");
-  lines.push(`Sucursal: ${locality?.name ?? "-"}`);
-
-  items.forEach((item, idx) => {
+  for (const item of items) {
     const product = getProduct(item.sizeId);
-    if (!product) return;
+    if (!product) continue;
+    const flavors = item.flavors.map((id) => getFlavor(id)?.name).filter((n): n is string => !!n);
+    const what = item.qty > 1 ? `${item.qty} x ${product.orderLabel}` : product.orderLabel;
     lines.push("");
-    lines.push(`PEDIDO ${idx + 1}`);
-    lines.push(item.qty > 1 ? `${item.qty} x ${product.orderLabel}` : product.orderLabel);
-    lines.push("Sabores:");
-    for (const id of item.flavors) {
-      const fl = getFlavor(id);
-      if (fl) lines.push(`- ${fl.name}`);
+    lines.push(`*${what}* (${formatPrice(product.price * item.qty)})`);
+    if (flavors.length) {
+      lines.push("Sabores:");
+      for (const name of flavors) lines.push(`- ${name}`);
     }
-    const lineTotal = product.price * item.qty;
-    lines.push(
-      item.qty > 1
-        ? `Precio: ${formatPrice(lineTotal)} (${formatPrice(product.price)} c/u)`
-        : `Precio: ${formatPrice(lineTotal)}`,
-    );
-  });
+  }
 
   const { subtotal } = cartTotals(items);
-  lines.push("");
-  lines.push(`SUBTOTAL: ${formatPrice(subtotal)}`);
-  lines.push("");
-  lines.push(`Cliente: ${data.name.trim()}`);
+  const name = data.name.trim();
+  const address = data.address.trim();
+  const notes = data.notes.trim();
 
+  lines.push("");
+  lines.push(`*Total: ${formatPrice(subtotal)}*`);
+  if (name) lines.push(`Nombre: ${name}`);
   if (data.method === "delivery") {
-    lines.push("Entrega: Delivery");
-    lines.push(`Dirección: ${data.address.trim()}`);
+    lines.push("Envío a domicilio");
+    if (address) lines.push(`Dirección: ${address}`);
   } else {
-    lines.push("Entrega: Retiro en sucursal");
-    const where = store
-      ? `${store.name}${store.address ? `, ${store.address}` : ""} (${locality?.name})`
-      : `${locality?.name ?? "-"} (a coordinar)`;
-    lines.push(`Retiro en: ${where}`);
+    lines.push(store?.address ? `Retiro en el local de ${store.address}` : "Retiro en el local");
   }
-  if (data.notes.trim()) lines.push(`Aclaraciones: ${data.notes.trim()}`);
-
-  lines.push("");
-  lines.push(
-    data.method === "delivery"
-      ? "Quedo a la espera de la confirmación del pedido y el costo de envío. ¡Gracias!"
-      : "Quedo a la espera de la confirmación del pedido. ¡Gracias!",
-  );
+  if (notes) lines.push(`Aclaración: ${notes}`);
+  lines.push("Gracias!");
   return lines.join("\n");
 }
 
