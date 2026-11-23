@@ -40,10 +40,13 @@ export function FlavorPicker() {
   const [qty, setQty] = useState(1);
   const [limitHit, setLimitHit] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // evita agregar dos veces el mismo helado con toques repetidos mientras el diálogo se cierra
+  const submitted = useRef(false);
 
   // al abrir: estado limpio (o los sabores del pote que se está editando)
   useEffect(() => {
     if (!picker || !product) return;
+    submitted.current = false;
     setSelected(editing ? editing.flavors.slice(0, product.maxFlavors) : []);
     setQuery("");
     setCat("all");
@@ -85,7 +88,8 @@ export function FlavorPicker() {
   };
 
   const confirm = () => {
-    if (none) return;
+    if (none || !picker || submitted.current) return;
+    submitted.current = true;
     if (editing) updateItem(editing.id, selected);
     else addItem(product.id, selected, qty);
     closePicker();

@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { getLocality, type LocalityId } from "@/config/branches";
 import { getFlavor } from "@/config/flavors";
-import { getProduct, MAX_QTY_PER_ITEM, type SizeId } from "@/config/products";
+import { MAX_QTY_PER_ITEM, type SizeId } from "@/config/products";
 import { cartTotals, newId, sanitizeItems, type CartItem } from "@/lib/cart";
 import type { CheckoutData, DeliveryMethod } from "@/lib/whatsapp";
 
@@ -103,6 +103,14 @@ interface PickerState {
   editId?: string;
 }
 
+/** Último helado agregado: alimenta la confirmación "Finalizar pedido / Agregar otro". */
+export interface AddedItem {
+  key: number;
+  sizeId: SizeId;
+  flavors: string[];
+  qty: number;
+}
+
 interface Toast {
   key: number;
   title: string;
@@ -140,6 +148,8 @@ interface OrderContextValue extends PersistState {
   closePicker: () => void;
   toast: Toast | null;
   bump: number;
+  lastAdded: AddedItem | null;
+  dismissAdded: () => void;
 }
 
 const OrderContext = createContext<OrderContextValue | null>(null);
@@ -153,6 +163,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [bump, setBump] = useState(0);
+  const [lastAdded, setLastAdded] = useState<AddedItem | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -207,9 +218,10 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
     (sizeId: SizeId, flavors: string[], qty = 1) => {
       dispatch({ type: "add", item: { id: newId(), sizeId, flavors, qty } });
       setBump((b) => b + 1);
-      showToast(`${getProduct(sizeId)?.name} agregado`, flavors.map((id) => getFlavor(id)?.name).filter(Boolean).join(" · "));
+      // en lugar de un aviso pasajero, se muestra la confirmación con los próximos pasos
+      setLastAdded({ key: Date.now(), sizeId, flavors: [...flavors], qty });
     },
-    [showToast],
+    [],
   );
 
   const totals = useMemo(() => cartTotals(state.items), [state.items]);
@@ -247,6 +259,8 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
     closePicker: () => setPicker(null),
     toast,
     bump,
+    lastAdded,
+    dismissAdded: () => setLastAdded(null),
   };
 
   return <OrderContext.Provider value={value}>{children}</OrderContext.Provider>;

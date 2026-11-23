@@ -5,14 +5,15 @@ import { ArrowRight, Check, ShoppingBag } from "lucide-react";
 import { getLocality } from "@/config/branches";
 import { formatPrice } from "@/lib/format";
 import { useOrder } from "@/lib/order-store";
+import { AddedSheet } from "./AddedSheet";
 import { CartSheet } from "./CartSheet";
 import { FlavorPicker } from "./FlavorPicker";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 
 /** Barra inferior compacta con subtotal y acceso al carrito. */
 function CartBar() {
-  const { count, subtotal, openCart, cartOpen, picker, hydrated, bump, localityId } = useOrder();
-  const visible = hydrated && count > 0 && !cartOpen && !picker;
+  const { count, subtotal, openCart, cartOpen, picker, hydrated, bump, localityId, lastAdded } = useOrder();
+  const visible = hydrated && count > 0 && !cartOpen && !picker && !lastAdded;
   const loc = getLocality(localityId);
   return (
     <>
@@ -119,6 +120,7 @@ export function Overlays() {
       <CartBar />
       <CartSheet />
       <FlavorPicker />
+      <AddedSheet />
       <LocalityConfirm />
       <Toast />
     </>
