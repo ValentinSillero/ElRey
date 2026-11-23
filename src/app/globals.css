@@ -297,6 +297,8 @@
     background: white;
     border: 1.5px solid var(--color-line);
     padding: 0.8rem 1rem;
+    /* 16px como mínimo: con menos, Safari de iPhone hace zoom al enfocar el campo */
+    font-size: max(16px, 1rem);
     transition:
       border-color 0.2s,
       box-shadow 0.2s;

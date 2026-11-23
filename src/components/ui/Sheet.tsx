@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { useMediaQuery, useScrollLock } from "@/lib/hooks";
 import { isTopOverlay, pushOverlay, trapTab } from "@/lib/overlay-stack";
+import { isTextEntry, useVirtualKeyboard } from "@/lib/use-virtual-keyboard";
 
 interface SheetProps {
   open: boolean;
@@ -35,6 +36,52 @@ export function Sheet({ open, onClose, title, label, subtitle, headerLeft, foote
   useScrollLock(open);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const kb = useVirtualKeyboard(open);
+  const pageScroll = useRef(0);
+
+  // al abrir se recuerda la posición de la página (iOS la corre al enfocar campos)
+  useEffect(() => {
+    if (open) pageScroll.current = window.scrollY;
+  }, [open]);
+
+  // al cerrar el teclado: la página de fondo vuelve exactamente a donde estaba
+  useEffect(() => {
+    if (!open || kb.open) return;
+    if (Math.abs(window.scrollY - pageScroll.current) > 1) window.scrollTo({ top: pageScroll.current, behavior: "instant" });
+  }, [open, kb.open]);
+
+  // con el teclado abierto, el campo activo (y su etiqueta) queda dentro del área visible
+  useEffect(() => {
+    if (!open || !kb.open) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reveal = () =>
+      setTimeout(() => {
+        const sc = scrollRef.current;
+        const el = document.activeElement;
+        if (!sc || !isTextEntry(el) || !sc.contains(el)) return;
+        const box = sc.getBoundingClientRect();
+        const gap = 16;
+        // el campo con su etiqueta; si no entra (pantalla apaisada), al menos el campo
+        const wrap = el.closest<HTMLElement>("[data-kb-reveal]");
+        const target = wrap && wrap.getBoundingClientRect().height <= box.height - gap * 2 ? wrap : el;
+        const r = target.getBoundingClientRect();
+        // margen más chico si el espacio es justo
+        const g = Math.max(0, Math.min(gap, (box.height - r.height) / 2));
+        let d = 0;
+        if (r.top < box.top + g) d = r.top - (box.top + g);
+        else if (r.bottom > box.bottom - g) d = Math.min(r.bottom - (box.bottom - g), r.top - (box.top + g));
+        if (Math.abs(d) > 1) sc.scrollBy({ top: d, behavior: reduce ? "auto" : "smooth" });
+      }, 0);
+    reveal();
+    // de nuevo cuando terminó de plegarse la barra inferior
+    const t = setTimeout(reveal, 260);
+    document.addEventListener("focusin", reveal);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("focusin", reveal);
+    };
+  }, [open, kb.open, kb.visibleHeight, kb.inset]);
 
   useEffect(() => {
     if (!open) return;
@@ -64,6 +111,15 @@ export function Sheet({ open, onClose, title, label, subtitle, headerLeft, foote
     ? { hidden: { x: "100%" }, shown: { x: 0 } }
     : { hidden: { y: "100%" }, shown: { y: 0 } };
 
+  // Con teclado, el panel se apoya sobre el área visible y no sobre la ventana completa:
+  // en iOS el teclado no achica la ventana, solo el visualViewport.
+  const kbStyle: React.CSSProperties | undefined = kb.open
+    ? desktop
+      ? { top: kb.offsetTop, bottom: kb.inset }
+      : // nunca más alto que de costumbre (92dvh): solo se achica cuando el teclado ya ocupa lugar
+        { bottom: kb.inset, maxHeight: `min(92dvh, ${Math.max(0, kb.visibleHeight - 8)}px)` }
+    : undefined;
+
   return (
     <AnimatePresence>
       {open && (
@@ -84,7 +140,8 @@ export function Sheet({ open, onClose, title, label, subtitle, headerLeft, foote
             aria-label={label}
             tabIndex={-1}
             className={`absolute inset-x-0 bottom-0 flex max-h-[92dvh] flex-col ${tall ? "h-[92dvh] md:h-auto" : ""} overflow-hidden rounded-t-[28px] bg-cream shadow-2xl outline-none md:inset-y-0 md:right-0 md:left-auto md:max-h-none md:rounded-none md:rounded-l-[32px]`}
-            style={desktop ? { width: `min(${width}px, 100vw)` } : undefined}
+            style={{ ...(desktop ? { width: `min(${width}px, 100vw)` } : null), ...kbStyle }}
+            data-keyboard={kb.open ? "open" : undefined}
             variants={variants}
             initial="hidden"
             animate="shown"
@@ -101,14 +158,15 @@ export function Sheet({ open, onClose, title, label, subtitle, headerLeft, foote
           >
             {/* manija para arrastrar (celular) */}
             <div
-              className="flex shrink-0 touch-none justify-center pt-2.5 pb-1 md:hidden"
+              className={`${kb.open ? "hidden" : "flex"} shrink-0 touch-none justify-center pt-2.5 pb-1 md:hidden`}
               onPointerDown={(e) => drag.start(e)}
               aria-hidden
             >
               <span className="h-1.5 w-11 rounded-full bg-ink/20" />
             </div>
             <header
-              className="flex shrink-0 items-center gap-3 px-4 pt-1 pb-3 sm:px-6 md:pt-6"
+              // mientras se escribe, encabezado compacto: deja más lugar al formulario
+              className={`flex shrink-0 items-center gap-3 px-4 sm:px-6 ${kb.open ? "pt-3 pb-2 md:pt-6" : "pt-1 pb-3 md:pt-6"}`}
               onPointerDown={(e) => {
                 if (!desktop && (e.target as HTMLElement).closest("button") === null) drag.start(e);
               }}
@@ -118,7 +176,7 @@ export function Sheet({ open, onClose, title, label, subtitle, headerLeft, foote
                 <h2 id={titleId} className="truncate font-display text-[1.45rem] leading-tight font-extrabold tracking-tight">
                   {title}
                 </h2>
-                {subtitle && <div className="text-sm text-muted">{subtitle}</div>}
+                {subtitle && !kb.open && <div className="text-sm text-muted">{subtitle}</div>}
               </div>
               <button
                 type="button"
@@ -129,12 +187,32 @@ export function Sheet({ open, onClose, title, label, subtitle, headerLeft, foote
                 <X className="size-5" />
               </button>
             </header>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 sm:px-6">{children}</div>
-            {footer && (
-              <div className="shrink-0 border-t border-line bg-cream/95 px-4 pt-3 pb-[max(14px,env(safe-area-inset-bottom))] backdrop-blur sm:px-6">
-                {footer}
-              </div>
-            )}
+            <div
+              ref={scrollRef}
+              className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 sm:px-6 ${
+                // sin barra inferior (teclado abierto) el final respeta el área segura
+                footer && !kb.open ? "pb-4" : "pb-[max(16px,env(safe-area-inset-bottom))]"
+              }`}
+            >
+              {children}
+            </div>
+            {/* barra inferior: se pliega mientras se escribe y vuelve al cerrar el teclado */}
+            <AnimatePresence initial={false}>
+              {footer && !kb.open && (
+                <m.div
+                  key="sheet-footer"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                  className="shrink-0 overflow-hidden"
+                >
+                  <div className="border-t border-line bg-cream/95 px-4 pt-3 pb-[max(14px,env(safe-area-inset-bottom))] backdrop-blur sm:px-6">
+                    {footer}
+                  </div>
+                </m.div>
+              )}
+            </AnimatePresence>
           </m.div>
         </div>
       )}

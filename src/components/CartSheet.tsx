@@ -68,6 +68,15 @@ export function CartSheet() {
   const channel = getOrderChannel(locality);
   const data = { ...o.draft, localityId: o.localityId };
 
+  // "Intro" en un campo no envía el pedido: pasa al siguiente campo o cierra el teclado
+  const nextField = (e: React.KeyboardEvent<HTMLInputElement>, next?: string) => {
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    const el = next ? formRef.current?.querySelector<HTMLElement>(`#${next}`) : null;
+    if (el) el.focus();
+    else e.currentTarget.blur();
+  };
+
   const goChoose = () => {
     closeCart();
     setTimeout(() => scrollToId("pedido"), 250);
@@ -286,9 +295,9 @@ export function CartSheet() {
         )}
 
         {cartStep === "checkout" && (
-          <form id="checkout-form" ref={formRef} onSubmit={submit} noValidate className="grid gap-6 pt-1 pb-2">
+          <form id="checkout-form" ref={formRef} onSubmit={submit} noValidate className="grid gap-6 pt-1 pb-4">
             {/* nombre */}
-            <div>
+            <div data-kb-reveal>
               <label htmlFor="ck-name" className="mb-1.5 block text-sm font-bold">
                 Tu nombre
               </label>
@@ -303,7 +312,8 @@ export function CartSheet() {
                 }}
                 autoComplete="name"
                 autoCapitalize="words"
-                enterKeyHint="next"
+                enterKeyHint={o.draft.method === "delivery" ? "next" : "done"}
+                onKeyDown={(e) => nextField(e, o.draft.method === "delivery" ? "ck-address" : undefined)}
                 maxLength={80}
                 aria-invalid={!!errors.name}
                 aria-describedby={errors.name ? "err-name" : undefined}
@@ -374,7 +384,7 @@ export function CartSheet() {
               <AnimatePresence mode="wait" initial={false}>
                 {o.draft.method === "delivery" ? (
                   <m.div key="d" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                    <div className="pt-4">
+                    <div className="pt-4" data-kb-reveal>
                       <label htmlFor="ck-address" className="mb-1.5 block text-sm font-bold">
                         Dirección de entrega
                       </label>
@@ -388,7 +398,8 @@ export function CartSheet() {
                           if (errors.address) setErrors((er) => ({ ...er, address: undefined }));
                         }}
                         autoComplete="street-address"
-                        enterKeyHint="next"
+                        enterKeyHint="done"
+                        onKeyDown={(e) => nextField(e)}
                         maxLength={200}
                         aria-invalid={!!errors.address}
                         aria-describedby={`note-envio${errors.address ? " err-address" : ""}`}
@@ -451,7 +462,7 @@ export function CartSheet() {
             </fieldset>
 
             {/* aclaraciones */}
-            <div>
+            <div data-kb-reveal>
               <label htmlFor="ck-notes" className="mb-1.5 block text-sm font-bold">
                 Aclaraciones <span className="font-medium text-muted">(opcional)</span>
               </label>
